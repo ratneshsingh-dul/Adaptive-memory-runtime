@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -9,7 +10,8 @@
 #include <exception>
 #include <iomanip>
 #include <iostream>
-#include <string_view>
+#include <limits>
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -27,10 +29,15 @@ std::size_t parse_iterations(int argc, char** argv) {
     if (argc < 2) {
         return default_iterations;
     }
+    if (argv[1][0] == '-') {
+        throw std::invalid_argument("iteration count must be positive");
+    }
 
+    errno = 0;
     char* end = nullptr;
     const auto parsed = std::strtoull(argv[1], &end, 10);
-    if (end == argv[1] || *end != '\0' || parsed == 0) {
+    if (errno == ERANGE || end == argv[1] || *end != '\0' || parsed == 0 ||
+        parsed > std::numeric_limits<std::size_t>::max()) {
         throw std::invalid_argument("usage: amr_baseline [positive-iteration-count]");
     }
     return static_cast<std::size_t>(parsed);

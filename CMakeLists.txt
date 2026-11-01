@@ -6,6 +6,12 @@ project(AdaptiveMemoryRuntime
     LANGUAGES CXX
 )
 
+# Make a normal first build useful for performance work; select Debug explicitly
+# when debugging (for example, -DCMAKE_BUILD_TYPE=Debug).
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 add_library(amr INTERFACE)
 target_include_directories(amr INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_compile_features(amr INTERFACE cxx_std_20)

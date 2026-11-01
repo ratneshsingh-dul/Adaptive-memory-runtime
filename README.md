@@ -1,16 +1,18 @@
 # Adaptive Memory Runtime
 
-A C++20 allocator project. The idea is to combine a few specialized allocation paths with a small online model that learns which allocation contexts tend to produce short-lived objects.
+A C++20 allocator project. The idea is to combine specialized allocation paths with a small online model that learns which allocation contexts tend to produce short-lived objects.
 
-The model will only guide future placement. It will never decide when memory is safe to reclaim. That remains the job of the allocator’s ownership and scope rules.
+The model will only guide future placement. It will never decide when memory is safe to reclaim; that follows explicit ownership and scope rules.
 
-The project is at the build-skeleton stage; the allocator is not implemented yet. The schedule is in [PLAN.md](PLAN.md), and the current design notes are in [docs/architecture.md](docs/architecture.md).
+The project is at the reference-resource stage. `MallocResource` currently wraps the system allocator and gives the later implementation a call shape to follow. The design is in [docs/architecture.md](docs/architecture.md), the API contract is in [docs/api.md](docs/api.md), and the 20-day schedule is in [PLAN.md](PLAN.md).
 
-## Build
+## Build and run
 
 ```sh
 cmake -S . -B build
 cmake --build build
+./build/amr_demo
+./build/amr_baseline 1000000
 ```
 
-The first target is only a small C++20 executable to establish the project layout. The runtime itself will be added in stages.
+The baseline is a small dependency-free timing harness for repeated allocation/free pairs. It is useful for early checks, not a substitute for the planned Google Benchmark workload suite. See [docs/benchmark-notes.md](docs/benchmark-notes.md) for the measurement details and first local reference run.
