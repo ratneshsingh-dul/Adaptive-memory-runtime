@@ -1,13 +1,16 @@
 # Adaptive Memory Runtime
 
-A C++20 systems project exploring an adaptive user-space allocator that combines specialized allocation strategies with lightweight online lifetime learning.
+A C++20 allocator project. The idea is to combine a few specialized allocation paths with a small online model that learns which allocation contexts tend to produce short-lived objects.
 
-## Project goal
+The model will only guide future placement. It will never decide when memory is safe to reclaim. That remains the job of the allocator’s ownership and scope rules.
 
-Build a measurable, safe, and explainable allocator runtime. It will classify allocation contexts from observed object lifetimes and use those observations to guide future allocations, while preserving conservative fallbacks when confidence is low.
+The project is at the build-skeleton stage; the allocator is not implemented yet. The schedule is in [PLAN.md](PLAN.md), and the current design notes are in [docs/architecture.md](docs/architecture.md).
 
-The project will evaluate its claims against the system allocator on documented workloads and hardware. It will not promise a universal speedup or assume a fixed latency target before measurement.
+## Build
 
-## Status
+```sh
+cmake -S . -B build
+cmake --build build
+```
 
-Planning phase. See [PLAN.md](PLAN.md) for the 20-day implementation and Git cadence.
+The first target is only a small C++20 executable to establish the project layout. The runtime itself will be added in stages.
