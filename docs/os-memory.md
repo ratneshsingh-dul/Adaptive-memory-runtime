@@ -1,7 +1,9 @@
 # OS memory provider
 
-`OSMemory::allocate(bytes)` obtains a read/write region directly from the operating system. The Windows implementation uses `VirtualAlloc` with reserve and commit flags. The POSIX implementation uses a private anonymous `mmap` mapping.
+`OSMemory::allocate(bytes)` obtains a read/write region directly from the operating system. Windows uses `VirtualAlloc` with reserve and commit flags; POSIX systems use a private anonymous `mmap` mapping.
 
-The returned `MemoryRegion` is move-only and releases its mapping when destroyed. It stores the requested byte count because POSIX `munmap` needs the mapped length. A zero-byte request returns an empty region; an OS allocation failure throws `std::bad_alloc`.
+`OSMemory::page_size()` reports the system page size. Requests are rounded up to a whole page, with an overflow check before rounding. `MemoryRegion::size()` reports the mapped size, so it can be larger than the requested size. A zero-byte request returns an empty region. A mapping failure throws `std::bad_alloc`.
 
-The demo asks for a 2 MiB region, writes to its first and last bytes, then lets RAII release it at scope exit. The provider does not yet expose page size or round requests itself; that is the next step, along with clearer diagnostics for release failures.
+`MemoryRegion` is move-only. Its destructor releases the mapping, and `reset()` lets callers check the result explicitly: it returns `true` and clears the region on success; on failure it returns `false` and keeps the address and size so release can be retried. A destructor cannot report a release error, so code that needs to handle that case should call `reset()` directly before the object leaves scope. Move assignment leaves both objects unchanged if it cannot release the destination's current mapping.
+
+The demo requests one byte more than a page, checks that the mapping rounds up, touches the first and last bytes, and explicitly releases the region. The Windows implementation uses `VirtualFree` with `MEM_RELEASE`; POSIX uses `munmap` with the rounded mapping size.
