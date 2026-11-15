@@ -1,6 +1,8 @@
 #include "amr/os_memory.hpp"
 
+#include <limits>
 #include <new>
+#include <stdexcept>
 #include <utility>
 
 #ifdef _WIN32
@@ -13,9 +15,13 @@
 #include <windows.h>
 #else
 #include <sys/mman.h>
+#include <unistd.h>
 
 #if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
 #define MAP_ANONYMOUS MAP_ANON
+#endif
+#if !defined(MAP_ANONYMOUS)
+#error "This platform does not provide anonymous mmap mappings"
 #endif
 #endif
 
@@ -25,7 +31,7 @@ MemoryRegion::MemoryRegion(std::byte* data, std::size_t size) noexcept
     : data_(data), size_(size) {}
 
 MemoryRegion::~MemoryRegion() {
-    OSMemory::release(data_, size_);
+    (void)reset();
 }
 
 MemoryRegion::MemoryRegion(MemoryRegion&& other) noexcept
@@ -33,12 +39,44 @@ MemoryRegion::MemoryRegion(MemoryRegion&& other) noexcept
       size_(std::exchange(other.size_, 0)) {}
 
 MemoryRegion& MemoryRegion::operator=(MemoryRegion&& other) noexcept {
-    if (this != &other) {
-        OSMemory::release(data_, size_);
+    if (this != &other && reset()) {
         data_ = std::exchange(other.data_, nullptr);
         size_ = std::exchange(other.size_, 0);
     }
     return *this;
+}
+
+bool MemoryRegion::reset() noexcept {
+    if (data_ == nullptr) {
+        size_ = 0;
+        return true;
+    }
+    if (!OSMemory::release(data_, size_)) {
+        return false;
+    }
+    data_ = nullptr;
+    size_ = 0;
+    return true;
+}
+
+std::size_t OSMemory::page_size() {
+    static const std::size_t value = [] {
+#ifdef _WIN32
+        SYSTEM_INFO info{};
+        GetSystemInfo(&info);
+        if (info.dwPageSize == 0) {
+            throw std::runtime_error("GetSystemInfo returned a zero page size");
+        }
+        return static_cast<std::size_t>(info.dwPageSize);
+#else
+        const long result = sysconf(_SC_PAGESIZE);
+        if (result <= 0) {
+            throw std::runtime_error("sysconf could not determine the page size");
+        }
+        return static_cast<std::size_t>(result);
+#endif
+    }();
+    return value;
 }
 
 MemoryRegion OSMemory::allocate(std::size_t bytes) {
@@ -46,11 +84,20 @@ MemoryRegion OSMemory::allocate(std::size_t bytes) {
         return {};
     }
 
+    const std::size_t page = page_size();
+    const std::size_t remainder = bytes % page;
+    const std::size_t padding = remainder == 0 ? 0 : page - remainder;
+    if (bytes > std::numeric_limits<std::size_t>::max() - padding) {
+        throw std::bad_alloc{};
+    }
+    const std::size_t mapped_size = bytes + padding;
+
     void* address = nullptr;
 #ifdef _WIN32
-    address = VirtualAlloc(nullptr, bytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    address = VirtualAlloc(nullptr, mapped_size,
+                           MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 #else
-    address = mmap(nullptr, bytes, PROT_READ | PROT_WRITE,
+    address = mmap(nullptr, mapped_size, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (address == MAP_FAILED) {
         address = nullptr;
@@ -60,18 +107,18 @@ MemoryRegion OSMemory::allocate(std::size_t bytes) {
     if (address == nullptr) {
         throw std::bad_alloc{};
     }
-    return MemoryRegion(static_cast<std::byte*>(address), bytes);
+    return MemoryRegion(static_cast<std::byte*>(address), mapped_size);
 }
 
-void OSMemory::release(std::byte* data, std::size_t bytes) noexcept {
+bool OSMemory::release(std::byte* data, std::size_t bytes) noexcept {
     if (data == nullptr) {
-        return;
+        return true;
     }
 #ifdef _WIN32
     (void)bytes;
-    VirtualFree(data, 0, MEM_RELEASE);
+    return VirtualFree(data, 0, MEM_RELEASE) != 0;
 #else
-    (void)munmap(data, bytes);
+    return munmap(data, bytes) == 0;
 #endif
 }
 
