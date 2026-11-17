@@ -14,7 +14,7 @@ public:
     BumpArena(const BumpArena&) = delete;
     BumpArena& operator=(const BumpArena&) = delete;
     BumpArena(BumpArena&&) noexcept = default;
-    BumpArena& operator=(BumpArena&&) noexcept = default;
+    BumpArena& operator=(BumpArena&&) noexcept = delete;
 
     [[nodiscard]] void* allocate(
         std::size_t bytes,
@@ -37,3 +37,4 @@ private:
 };
 
 } // namespace amr
+

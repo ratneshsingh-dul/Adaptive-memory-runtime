@@ -6,4 +6,4 @@
 
 Reset does not clear the bytes and does not call object destructors. Constructed objects with non-trivial destructors must be destroyed by their owner before reset. The arena is not thread-safe and does not grow: requests that do not fit fail instead of silently acquiring another region.
 
-The demo allocates 73 bytes at 64-byte alignment, makes a second allocation, reports capacity and used space, then resets the arena and reports zero bytes used.
+The arena can be move-constructed, but move assignment is disabled because replacing an existing arena depends on successfully releasing its current OS region. The demo allocates 73 bytes at 64-byte alignment, makes a second allocation, reports capacity and used space, then resets the arena and reports zero bytes used.
