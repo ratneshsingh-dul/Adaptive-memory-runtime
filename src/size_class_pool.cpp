@@ -4,8 +4,10 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <new>
 #include <stdexcept>
+#include <utility>
 
 namespace amr {
 
@@ -144,3 +146,4 @@ void* SizeClassPool::allocate_large(std::size_t bytes, std::size_t alignment) {
 }
 
 } // namespace amr
+
