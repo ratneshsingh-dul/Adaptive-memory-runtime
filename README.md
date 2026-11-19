@@ -2,7 +2,7 @@
 
 A C++20 allocator project exploring specialized allocation paths and a small online model for learning object lifetimes.
 
-The current code includes a system-allocator reference, a page-aware OS region provider, and a bounded bump arena for phase-scoped allocations. The size-class pool, persistent allocator, and lifetime predictor are still ahead. The model will guide future placement; it will not decide when memory is safe to reclaim.
+The current code includes a system-allocator reference, a page-aware OS region provider, a bounded bump arena, and a size-class pool for reusable small allocations. Larger or page-incompatible requests use the system-allocator fallback. The persistent free-list allocator and lifetime predictor are still ahead.
 
 ## Build and run
 
@@ -13,4 +13,4 @@ cmake --build build
 ./build/amr_baseline 1000000
 ```
 
-The demo requests an aligned allocation from a bump arena, shows the consumed capacity, and resets the arena. See [bump arena notes](docs/bump-arena.md), [OS memory notes](docs/os-memory.md), and [benchmark notes](docs/benchmark-notes.md) for the current behavior and limits.
+The demo shows bump allocation and reset, small-slot reuse, and the large-request fallback. See [size-class notes](docs/size-classes.md), [bump arena notes](docs/bump-arena.md), [OS memory notes](docs/os-memory.md), and [benchmark notes](docs/benchmark-notes.md).
