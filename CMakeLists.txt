@@ -12,7 +12,11 @@ if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-add_library(amr STATIC src/os_memory.cpp src/bump_arena.cpp)
+add_library(amr STATIC
+    src/os_memory.cpp
+    src/bump_arena.cpp
+    src/size_class_pool.cpp
+)
 target_include_directories(amr PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_compile_features(amr PUBLIC cxx_std_20)
 
