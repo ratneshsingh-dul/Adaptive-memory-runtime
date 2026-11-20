@@ -16,6 +16,7 @@ add_library(amr STATIC
     src/os_memory.cpp
     src/bump_arena.cpp
     src/size_class_pool.cpp
+    src/free_list_allocator.cpp
 )
 target_include_directories(amr PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_compile_features(amr PUBLIC cxx_std_20)
