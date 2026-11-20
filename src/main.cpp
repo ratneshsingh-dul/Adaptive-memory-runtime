@@ -1,4 +1,5 @@
 #include "amr/bump_arena.hpp"
+#include "amr/free_list_allocator.hpp"
 #include "amr/malloc_resource.hpp"
 #include "amr/size_class_pool.hpp"
 
@@ -41,6 +42,26 @@ int main() {
     pool.deallocate(large);
     std::cout << "SizeClassPool: small slot reused; oversized request used the fallback; "
               << pool.chunk_count() << " OS chunk(s) owned.\n";
+
+    amr::FreeListAllocator persistent(64 * 1024);
+    void* first_block = persistent.allocate(256, 64);
+    void* second_block = persistent.allocate(512, 64);
+    if (reinterpret_cast<std::uintptr_t>(first_block) % 64 != 0 ||
+        reinterpret_cast<std::uintptr_t>(second_block) % 64 != 0) {
+        std::cerr << "FreeListAllocator returned a misaligned block.\n";
+        return 1;
+    }
+    persistent.deallocate(first_block);
+    persistent.deallocate(second_block);
+    if (persistent.free_bytes() != persistent.capacity()) {
+        std::cerr << "FreeListAllocator did not coalesce adjacent free blocks.\n";
+        return 1;
+    }
+    void* merged_block = persistent.allocate(32 * 1024, 64);
+    persistent.deallocate(merged_block);
+    std::cout << "FreeListAllocator: adjacent blocks coalesced; "
+              << persistent.free_bytes() << " free of "
+              << persistent.capacity() << " bytes.\n";
 
     amr::MallocResource system_memory;
     auto* buffer = static_cast<char*>(system_memory.allocate(64));
