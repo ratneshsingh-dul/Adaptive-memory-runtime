@@ -38,10 +38,12 @@ void* SizeClassPool::allocate(std::size_t bytes, std::size_t alignment) {
 
                 FreeNode* slot = free_lists_[index];
                 free_lists_[index] = slot->next;
-                auto* header = ::new (static_cast<void*>(slot))
-                    AllocationHeader{slot, 0, index};
+                auto* header = ::new (static_cast<void*>(slot)) AllocationHeader{
+                    AllocationMetadata{AllocationMetadata::expected_magic, this, bytes,
+                                       alignment, AllocationSource::size_class_slot},
+                    slot, 0, index};
                 std::byte* payload = payload_address(slot, alignment);
-                store_header_pointer(payload, header);
+                store_allocation_metadata(payload, &header->metadata);
                 return payload;
             }
         }
@@ -55,12 +57,21 @@ void SizeClassPool::deallocate(void* address) noexcept {
         return;
     }
 
-    AllocationHeader* header = load_header_pointer(address);
-    if (header->class_index == large_class) {
+    AllocationMetadata* metadata = load_allocation_metadata(address);
+    if (!is_valid_metadata(metadata) || metadata->owner != this) {
+        return;
+    }
+    auto* header = reinterpret_cast<AllocationHeader*>(metadata);
+
+    if (metadata->source == AllocationSource::system_fallback) {
         void* base = header->base;
-        const std::size_t alignment = header->alignment;
+        const std::size_t alignment = header->raw_alignment;
         std::destroy_at(header);
         large_resource_.deallocate(base, alignment);
+        return;
+    }
+    if (metadata->source != AllocationSource::size_class_slot ||
+        header->class_index >= free_lists_.size()) {
         return;
     }
 
@@ -78,7 +89,7 @@ bool SizeClassPool::is_power_of_two(std::size_t value) noexcept {
 std::size_t SizeClassPool::required_slot_bytes(
     std::size_t bytes, std::size_t alignment) {
     constexpr std::size_t fixed_overhead =
-        sizeof(AllocationHeader) + sizeof(AllocationHeader*);
+        sizeof(AllocationHeader) + sizeof(AllocationMetadata*);
     const std::size_t padding = alignment - 1;
     const std::size_t maximum = std::numeric_limits<std::size_t>::max();
     if (padding > maximum - fixed_overhead ||
@@ -92,7 +103,7 @@ std::byte* SizeClassPool::payload_address(void* base, std::size_t alignment) {
     const auto address = reinterpret_cast<std::uintptr_t>(base);
     constexpr auto maximum = std::numeric_limits<std::uintptr_t>::max();
     constexpr std::size_t fixed_overhead =
-        sizeof(AllocationHeader) + sizeof(AllocationHeader*);
+        sizeof(AllocationHeader) + sizeof(AllocationMetadata*);
     const auto mask = static_cast<std::uintptr_t>(alignment - 1);
     if (address > maximum - fixed_overhead ||
         address + fixed_overhead > maximum - mask) {
@@ -101,19 +112,6 @@ std::byte* SizeClassPool::payload_address(void* base, std::size_t alignment) {
     const auto start = address + fixed_overhead;
     const auto aligned = (start + mask) & ~mask;
     return reinterpret_cast<std::byte*>(aligned);
-}
-
-void SizeClassPool::store_header_pointer(
-    std::byte* payload, AllocationHeader* header) noexcept {
-    std::memcpy(payload - sizeof(header), &header, sizeof(header));
-}
-
-SizeClassPool::AllocationHeader* SizeClassPool::load_header_pointer(
-    void* payload) noexcept {
-    AllocationHeader* header = nullptr;
-    std::memcpy(&header, static_cast<std::byte*>(payload) - sizeof(header),
-                sizeof(header));
-    return header;
 }
 
 void SizeClassPool::add_chunk(std::size_t class_index) {
@@ -139,11 +137,13 @@ void* SizeClassPool::allocate_large(std::size_t bytes, std::size_t alignment) {
     const std::size_t raw_alignment =
         std::max(alignment, alignof(AllocationHeader));
     void* base = large_resource_.allocate(total_bytes, raw_alignment);
-    auto* header = ::new (base) AllocationHeader{base, raw_alignment, large_class};
+    auto* header = ::new (base) AllocationHeader{
+        AllocationMetadata{AllocationMetadata::expected_magic, this, bytes,
+                           alignment, AllocationSource::system_fallback},
+        base, raw_alignment, 0};
     std::byte* payload = payload_address(base, alignment);
-    store_header_pointer(payload, header);
+    store_allocation_metadata(payload, &header->metadata);
     return payload;
 }
 
 } // namespace amr
-

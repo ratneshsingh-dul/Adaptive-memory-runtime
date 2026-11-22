@@ -1,5 +1,6 @@
 #pragma once
 
+#include "amr/allocation_metadata.hpp"
 #include "amr/malloc_resource.hpp"
 #include "amr/os_memory.hpp"
 
@@ -32,24 +33,20 @@ private:
     };
 
     struct AllocationHeader {
+        AllocationMetadata metadata;
         void* base;
-        std::size_t alignment;
+        std::size_t raw_alignment;
         std::size_t class_index;
     };
 
     static constexpr std::array<std::size_t, 8> class_sizes_{
         64, 128, 256, 512, 1024, 2048, 4096, 8192};
-    static constexpr std::size_t large_class = class_sizes_.size();
 
     [[nodiscard]] static bool is_power_of_two(std::size_t value) noexcept;
     [[nodiscard]] static std::size_t required_slot_bytes(
         std::size_t bytes, std::size_t alignment);
     [[nodiscard]] static std::byte* payload_address(
         void* base, std::size_t alignment);
-    static void store_header_pointer(
-        std::byte* payload, AllocationHeader* header) noexcept;
-    [[nodiscard]] static AllocationHeader* load_header_pointer(
-        void* payload) noexcept;
 
     void add_chunk(std::size_t class_index);
     [[nodiscard]] void* allocate_large(

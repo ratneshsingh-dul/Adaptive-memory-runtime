@@ -1,10 +1,10 @@
 #pragma once
 
+#include "amr/allocation_metadata.hpp"
 #include "amr/os_memory.hpp"
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 
 namespace amr {
 
@@ -29,19 +29,17 @@ public:
 
 private:
     struct BlockHeader {
+        AllocationMetadata metadata;
         std::size_t block_size;
         std::size_t payload_offset;
         BlockHeader* previous_physical;
         BlockHeader* next_physical;
         BlockHeader* previous_free;
         BlockHeader* next_free;
-        FreeListAllocator* owner;
-        std::uint64_t magic;
         bool is_free;
     };
 
     static constexpr std::size_t bin_count = sizeof(std::size_t) * 8;
-    static constexpr std::uint64_t header_magic = 0xA110CA7E5EED1234ULL;
 
     [[nodiscard]] static bool is_power_of_two(std::size_t value) noexcept;
     [[nodiscard]] static std::size_t bin_for(std::size_t block_size) noexcept;
@@ -51,8 +49,6 @@ private:
         std::size_t alignment,
         std::size_t& span,
         std::size_t& payload_offset) noexcept;
-    [[nodiscard]] static BlockHeader* header_from_payload(void* payload) noexcept;
-    static void store_header_pointer(std::byte* payload, BlockHeader* header) noexcept;
 
     void insert_free(BlockHeader* block) noexcept;
     void remove_free(BlockHeader* block) noexcept;
@@ -64,4 +60,3 @@ private:
 };
 
 } // namespace amr
-

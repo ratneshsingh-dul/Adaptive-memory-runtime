@@ -2,7 +2,6 @@
 
 #include <bit>
 #include <cstdint>
-#include <cstring>
 #include <limits>
 #include <new>
 #include <stdexcept>
@@ -16,9 +15,9 @@ FreeListAllocator::FreeListAllocator(std::size_t capacity_bytes)
     }
 
     first_physical_ = ::new (static_cast<void*>(region_.data())) BlockHeader{};
+    first_physical_->metadata = {
+        AllocationMetadata::expected_magic, this, 0, 0, AllocationSource::free_list};
     first_physical_->block_size = region_.size();
-    first_physical_->owner = this;
-    first_physical_->magic = header_magic;
     first_physical_->is_free = true;
     free_bytes_ = region_.size();
     insert_free(first_physical_);
@@ -32,7 +31,7 @@ void* FreeListAllocator::allocate(std::size_t bytes, std::size_t alignment) {
         return nullptr;
     }
 
-    const std::size_t minimum_span = sizeof(BlockHeader) + sizeof(BlockHeader*) + bytes;
+    const std::size_t minimum_span = sizeof(BlockHeader) + sizeof(AllocationMetadata*) + bytes;
     if (minimum_span < bytes) {
         throw std::bad_alloc{};
     }
@@ -61,16 +60,16 @@ void* FreeListAllocator::allocate(std::size_t bytes, std::size_t alignment) {
     remove_free(selected);
     const std::size_t remainder = original_size - selected_span;
     constexpr std::size_t minimum_free_span =
-        sizeof(BlockHeader) + sizeof(BlockHeader*) + 1;
+        sizeof(BlockHeader) + sizeof(AllocationMetadata*) + 1;
 
     if (remainder >= minimum_free_span) {
         auto* tail_address = reinterpret_cast<std::byte*>(selected) + selected_span;
         auto* tail = ::new (static_cast<void*>(tail_address)) BlockHeader{};
+        tail->metadata = {
+            AllocationMetadata::expected_magic, this, 0, 0, AllocationSource::free_list};
         tail->block_size = remainder;
         tail->previous_physical = selected;
         tail->next_physical = selected->next_physical;
-        tail->owner = this;
-        tail->magic = header_magic;
         tail->is_free = true;
         if (tail->next_physical != nullptr) {
             tail->next_physical->previous_physical = tail;
@@ -84,12 +83,13 @@ void* FreeListAllocator::allocate(std::size_t bytes, std::size_t alignment) {
         free_bytes_ -= original_size;
     }
 
+    selected->metadata = {
+        AllocationMetadata::expected_magic, this, bytes, alignment,
+        AllocationSource::free_list};
     selected->payload_offset = selected_offset;
-    selected->owner = this;
-    selected->magic = header_magic;
     selected->is_free = false;
     auto* payload = reinterpret_cast<std::byte*>(selected) + selected_offset;
-    store_header_pointer(payload, selected);
+    store_allocation_metadata(payload, &selected->metadata);
     return payload;
 }
 
@@ -98,13 +98,19 @@ void FreeListAllocator::deallocate(void* address) noexcept {
         return;
     }
 
-    BlockHeader* block = header_from_payload(address);
-    if (block == nullptr || block->owner != this ||
-        block->magic != header_magic || block->is_free) {
+    AllocationMetadata* metadata = load_allocation_metadata(address);
+    if (!is_valid_metadata(metadata) || metadata->owner != this ||
+        metadata->source != AllocationSource::free_list) {
+        return;
+    }
+    auto* block = reinterpret_cast<BlockHeader*>(metadata);
+    if (block->is_free) {
         return;
     }
 
     block->is_free = true;
+    block->metadata.requested_bytes = 0;
+    block->metadata.requested_alignment = 0;
     free_bytes_ += block->block_size;
 
     if (block->previous_physical != nullptr && block->previous_physical->is_free) {
@@ -115,7 +121,7 @@ void FreeListAllocator::deallocate(void* address) noexcept {
         if (block->next_physical != nullptr) {
             block->next_physical->previous_physical = previous;
         }
-        block->magic = 0;
+        block->metadata.magic = 0;
         block = previous;
     }
 
@@ -127,7 +133,7 @@ void FreeListAllocator::deallocate(void* address) noexcept {
         if (next->next_physical != nullptr) {
             next->next_physical->previous_physical = block;
         }
-        next->magic = 0;
+        next->metadata.magic = 0;
     }
 
     insert_free(block);
@@ -149,7 +155,8 @@ bool FreeListAllocator::layout_for(
     std::size_t& payload_offset) noexcept {
     const auto base = reinterpret_cast<std::uintptr_t>(block);
     constexpr auto address_max = std::numeric_limits<std::uintptr_t>::max();
-    constexpr std::size_t fixed_overhead = sizeof(BlockHeader) + sizeof(BlockHeader*);
+    constexpr std::size_t fixed_overhead =
+        sizeof(BlockHeader) + sizeof(AllocationMetadata*);
     const auto mask = static_cast<std::uintptr_t>(alignment - 1);
     if (base > address_max - fixed_overhead) {
         return false;
@@ -173,18 +180,6 @@ bool FreeListAllocator::layout_for(
     span = raw_span + padding;
     payload_offset = static_cast<std::size_t>(payload - base);
     return span <= block->block_size;
-}
-
-FreeListAllocator::BlockHeader* FreeListAllocator::header_from_payload(
-    void* payload) noexcept {
-    BlockHeader* block = nullptr;
-    std::memcpy(&block, static_cast<std::byte*>(payload) - sizeof(block), sizeof(block));
-    return block;
-}
-
-void FreeListAllocator::store_header_pointer(
-    std::byte* payload, BlockHeader* block) noexcept {
-    std::memcpy(payload - sizeof(block), &block, sizeof(block));
 }
 
 void FreeListAllocator::insert_free(BlockHeader* block) noexcept {
